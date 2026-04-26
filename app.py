@@ -479,16 +479,24 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ── Detect cloud environment ──────────────────────────────
+import os
+IS_CLOUD = (
+    os.environ.get("STREAMLIT_SHARING_MODE") is not None or
+    os.environ.get("IS_STREAMLIT_CLOUD") is not None or
+    "appuser" in os.path.expanduser("~")
+)
+
 # ── Session state ─────────────────────────────────────────
 if "df" not in st.session_state:
     st.session_state.df = None
 if "product_info" not in st.session_state:
     st.session_state.product_info = {}
 
-df   = st.session_state.df
+df    = st.session_state.df
 pinfo = st.session_state.product_info
 
-# ── Navbar (hanya tampil kalau ada data) ──────────────────
+# ── Navbar ────────────────────────────────────────────────
 if df is not None and not df.empty:
     st.markdown("""
     <div class="navbar">
@@ -509,23 +517,98 @@ if df is not None and not df.empty:
 
 # ── Sidebar ───────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("**⚙️ Konfigurasi Scraping**")
-    url_input = st.text_input("URL Produk Tokopedia",
-                              placeholder="https://www.tokopedia.com/...",
-                              help="Query string (?t_id=...) otomatis dihapus.")
-    if url_input and "tokopedia.com" in url_input:
-        c = clean_url(url_input)
-        if c != url_input.strip():
-            st.caption("✅ Query params dihapus otomatis")
 
-    scrape_all = st.checkbox("📥 Ambil SEMUA review", value=False)
-    if scrape_all:
-        st.warning("⚠️ Proses bisa sangat lama.")
-        max_pages = 999
+    if IS_CLOUD:
+        # ── CLOUD MODE: Upload CSV ─────────────────────────
+        st.markdown("**📂 Upload Data Review**")
+        st.info(
+            "Cara pakai di cloud: "
+            "(1) Jalankan scrape_tokopedia.py di komputer lokal, "
+            "(2) Upload file reviews_tokopedia.csv di bawah.",
+            icon="ℹ️",
+        )
+        uploaded = st.file_uploader("Upload CSV hasil scraping", type=["csv"])
+        product_name = st.text_input("Nama Produk (opsional)",
+                                     placeholder="misal: POCO Pad M1 8GB")
+
+        if uploaded is not None:
+            try:
+                df_up = pd.read_csv(uploaded)
+                required = {"name", "rating", "comment"}
+                if not required.issubset(df_up.columns):
+                    st.error(f"CSV harus punya kolom: {required}")
+                else:
+                    for col in ["review_time", "variant", "like_count"]:
+                        if col not in df_up.columns:
+                            df_up[col] = "" if col != "like_count" else 0
+                    df_up["rating"] = pd.to_numeric(
+                        df_up["rating"], errors="coerce").fillna(0).astype(int)
+                    df_up["like_count"] = pd.to_numeric(
+                        df_up["like_count"], errors="coerce").fillna(0).astype(int)
+                    df_up = df_up[df_up["comment"].notna() & (df_up["comment"] != "")]
+                    st.session_state.df = df_up
+                    st.session_state.product_info = {
+                        "name": product_name or uploaded.name.replace(".csv", ""),
+                        "description": "",
+                        "avg_rating": f"{df_up['rating'].mean():.2f}",
+                        "total_reviews": str(len(df_up)),
+                    }
+                    compute_top_words.clear()
+                    run_lda.clear()
+                    st.success(f"✅ {len(df_up)} review berhasil dimuat!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Gagal baca CSV: {e}")
+
     else:
-        max_pages = st.slider("Jumlah Halaman", 1, 20, 5, help="1 halaman ≈ 10 review")
+        # ── LOCAL MODE: Scraping + Upload ─────────────────
+        mode = st.radio("Mode Input", ["🔍 Scraping Langsung", "📂 Upload CSV"],
+                        horizontal=True)
 
-    scrape_btn = st.button("🚀 Mulai Scraping", use_container_width=True)
+        if mode == "🔍 Scraping Langsung":
+            st.markdown("**⚙️ Konfigurasi Scraping**")
+            url_input = st.text_input("URL Produk Tokopedia",
+                                      placeholder="https://www.tokopedia.com/...",
+                                      help="Query string (?t_id=...) otomatis dihapus.")
+            if url_input and "tokopedia.com" in url_input:
+                c = clean_url(url_input)
+                if c != url_input.strip():
+                    st.caption("✅ Query params dihapus")
+            scrape_all = st.checkbox("📥 Ambil SEMUA review", value=False)
+            if scrape_all:
+                st.warning("⚠️ Proses bisa sangat lama.")
+                max_pages = 999
+            else:
+                max_pages = st.slider("Jumlah Halaman", 1, 20, 5)
+            scrape_btn = st.button("🚀 Mulai Scraping", use_container_width=True)
+        else:
+            url_input  = ""
+            scrape_btn = False
+            scrape_all = False
+            max_pages  = 5
+            uploaded_local = st.file_uploader("Upload CSV review", type=["csv"])
+            if uploaded_local:
+                try:
+                    df_loc = pd.read_csv(uploaded_local)
+                    for col in ["review_time", "variant", "like_count"]:
+                        if col not in df_loc.columns:
+                            df_loc[col] = "" if col != "like_count" else 0
+                    df_loc["rating"] = pd.to_numeric(
+                        df_loc["rating"], errors="coerce").fillna(0).astype(int)
+                    df_loc["like_count"] = pd.to_numeric(
+                        df_loc["like_count"], errors="coerce").fillna(0).astype(int)
+                    df_loc = df_loc[df_loc["comment"].notna() & (df_loc["comment"] != "")]
+                    st.session_state.df = df_loc
+                    st.session_state.product_info = {
+                        "name": uploaded_local.name.replace(".csv", ""),
+                        "description": "", "avg_rating": "", "total_reviews": str(len(df_loc)),
+                    }
+                    compute_top_words.clear()
+                    run_lda.clear()
+                    st.success(f"✅ {len(df_loc)} review dimuat!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal baca CSV: {e}")
 
     st.markdown("---")
     st.markdown("**🔤 Pengaturan Analisis**")
@@ -536,12 +619,11 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     <p style="font-size:0.72rem;color:#8faac8;">
-    ⚠️ Browser Chrome terbuka saat scraping.<br>
-    💡 Slider analisis bisa diubah bebas tanpa scraping ulang.
+    💡 Slider analisis bisa diubah bebas tanpa upload ulang.
     </p>""", unsafe_allow_html=True)
 
-# ── Scraping trigger ──────────────────────────────────────
-if scrape_btn:
+# ── Scraping trigger (lokal only) ─────────────────────────
+if (not IS_CLOUD and "scrape_btn" in locals() and scrape_btn):
     if not url_input or "tokopedia.com" not in url_input:
         st.error("⚠️ Masukkan URL produk Tokopedia yang valid.")
     else:
