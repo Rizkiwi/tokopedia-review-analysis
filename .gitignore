@@ -1,0 +1,5 @@
+venv_playwright/
+__pycache__/
+*.pyc
+.env
+.ipynb_checkpoints/
