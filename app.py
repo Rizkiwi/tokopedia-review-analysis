@@ -531,34 +531,85 @@ with st.sidebar:
         product_name = st.text_input("Nama Produk (opsional)",
                                      placeholder="misal: POCO Pad M1 8GB")
 
+        # Preview info jika file sudah dipilih
         if uploaded is not None:
-            try:
-                df_up = pd.read_csv(uploaded)
-                required = {"name", "rating", "comment"}
-                if not required.issubset(df_up.columns):
-                    st.error(f"CSV harus punya kolom: {required}")
-                else:
-                    for col in ["review_time", "variant", "like_count"]:
-                        if col not in df_up.columns:
-                            df_up[col] = "" if col != "like_count" else 0
-                    df_up["rating"] = pd.to_numeric(
-                        df_up["rating"], errors="coerce").fillna(0).astype(int)
-                    df_up["like_count"] = pd.to_numeric(
-                        df_up["like_count"], errors="coerce").fillna(0).astype(int)
-                    df_up = df_up[df_up["comment"].notna() & (df_up["comment"] != "")]
-                    st.session_state.df = df_up
-                    st.session_state.product_info = {
-                        "name": product_name or uploaded.name.replace(".csv", ""),
-                        "description": "",
-                        "avg_rating": f"{df_up['rating'].mean():.2f}",
-                        "total_reviews": str(len(df_up)),
-                    }
-                    compute_top_words.clear()
-                    run_lda.clear()
-                    st.success(f"✅ {len(df_up)} review berhasil dimuat!")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Gagal baca CSV: {e}")
+            # Tampilkan info file sebelum diproses
+            st.markdown(f"""
+            <div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;
+                padding:10px 14px;margin:8px 0;font-size:0.8rem;">
+                <b style="color:#0369a1;">📄 File siap diproses:</b><br>
+                <span style="color:#374151;">{uploaded.name}</span>
+                <span style="color:#6b7280;margin-left:8px;">
+                    ({uploaded.size/1024:.1f} KB)
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            proses_btn = st.button(
+                "⚡ Proses & Muat Data",
+                use_container_width=True,
+                type="primary",
+                key="proses_cloud",
+            )
+
+            if proses_btn:
+                with st.spinner("⏳ Memproses data CSV..."):
+                    try:
+                        df_up = pd.read_csv(uploaded)
+                        required = {"name", "rating", "comment"}
+                        if not required.issubset(df_up.columns):
+                            st.error(f"❌ CSV harus punya kolom: {required}")
+                            st.stop()
+
+                        for col in ["review_time", "variant", "like_count"]:
+                            if col not in df_up.columns:
+                                df_up[col] = "" if col != "like_count" else 0
+                        df_up["rating"] = pd.to_numeric(
+                            df_up["rating"], errors="coerce").fillna(0).astype(int)
+                        df_up["like_count"] = pd.to_numeric(
+                            df_up["like_count"], errors="coerce").fillna(0).astype(int)
+                        df_up = df_up[df_up["comment"].notna() & (df_up["comment"] != "")]
+
+                        n_reviews = len(df_up)
+                        avg_r = df_up["rating"].mean()
+                        n_r5  = (df_up["rating"] == 5).sum()
+
+                        st.session_state.df = df_up
+                        st.session_state.product_info = {
+                            "name": product_name or uploaded.name.replace(".csv", ""),
+                            "description": "",
+                            "avg_rating": f"{avg_r:.2f}",
+                            "total_reviews": str(n_reviews),
+                        }
+                        compute_top_words.clear()
+                        run_lda.clear()
+
+                        # Konfirmasi sukses dengan ringkasan
+                        st.success(f"✅ Berhasil memuat **{n_reviews} review**!")
+                        st.markdown(f"""
+                        <div style="background:#f0fdf4;border:1px solid #86efac;
+                            border-radius:10px;padding:12px 16px;font-size:0.82rem;">
+                            <b style="color:#15803d;">📊 Ringkasan Data:</b><br>
+                            <span style="color:#374151;">
+                            🗂 Total review : <b>{n_reviews}</b><br>
+                            ⭐ Rata-rata    : <b>{avg_r:.2f} ★</b><br>
+                            💚 Bintang 5   : <b>{n_r5} review ({n_r5/n_reviews*100:.0f}%)</b>
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.info("👆 Dashboard akan muncul di atas — scroll ke atas!")
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"❌ Gagal memproses CSV: {e}")
+        else:
+            # Belum ada file — tampilkan panduan
+            st.markdown("""
+            <div style="background:#fafafa;border:1.5px dashed #c7d9f8;border-radius:10px;
+                padding:14px;text-align:center;color:#8faac8;font-size:0.8rem;margin-top:8px;">
+                ⬆️ Pilih file CSV di atas untuk mulai
+            </div>
+            """, unsafe_allow_html=True)
 
     else:
         # ── LOCAL MODE: Scraping + Upload ─────────────────
@@ -588,27 +639,58 @@ with st.sidebar:
             max_pages  = 5
             uploaded_local = st.file_uploader("Upload CSV review", type=["csv"])
             if uploaded_local:
-                try:
-                    df_loc = pd.read_csv(uploaded_local)
-                    for col in ["review_time", "variant", "like_count"]:
-                        if col not in df_loc.columns:
-                            df_loc[col] = "" if col != "like_count" else 0
-                    df_loc["rating"] = pd.to_numeric(
-                        df_loc["rating"], errors="coerce").fillna(0).astype(int)
-                    df_loc["like_count"] = pd.to_numeric(
-                        df_loc["like_count"], errors="coerce").fillna(0).astype(int)
-                    df_loc = df_loc[df_loc["comment"].notna() & (df_loc["comment"] != "")]
-                    st.session_state.df = df_loc
-                    st.session_state.product_info = {
-                        "name": uploaded_local.name.replace(".csv", ""),
-                        "description": "", "avg_rating": "", "total_reviews": str(len(df_loc)),
-                    }
-                    compute_top_words.clear()
-                    run_lda.clear()
-                    st.success(f"✅ {len(df_loc)} review dimuat!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Gagal baca CSV: {e}")
+                st.markdown(f"""
+                <div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;
+                    padding:10px 14px;margin:8px 0;font-size:0.8rem;">
+                    <b style="color:#0369a1;">📄 File siap diproses:</b><br>
+                    <span style="color:#374151;">{uploaded_local.name}</span>
+                    <span style="color:#6b7280;margin-left:8px;">
+                        ({uploaded_local.size/1024:.1f} KB)
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                proses_local_btn = st.button(
+                    "⚡ Proses & Muat Data",
+                    use_container_width=True,
+                    type="primary",
+                    key="proses_local",
+                )
+                if proses_local_btn:
+                    with st.spinner("⏳ Memproses data CSV..."):
+                        try:
+                            df_loc = pd.read_csv(uploaded_local)
+                            for col in ["review_time", "variant", "like_count"]:
+                                if col not in df_loc.columns:
+                                    df_loc[col] = "" if col != "like_count" else 0
+                            df_loc["rating"] = pd.to_numeric(
+                                df_loc["rating"], errors="coerce").fillna(0).astype(int)
+                            df_loc["like_count"] = pd.to_numeric(
+                                df_loc["like_count"], errors="coerce").fillna(0).astype(int)
+                            df_loc = df_loc[df_loc["comment"].notna() & (df_loc["comment"] != "")]
+                            n_reviews = len(df_loc)
+                            avg_r = df_loc["rating"].mean()
+                            st.session_state.df = df_loc
+                            st.session_state.product_info = {
+                                "name": uploaded_local.name.replace(".csv", ""),
+                                "description": "",
+                                "avg_rating": f"{avg_r:.2f}",
+                                "total_reviews": str(n_reviews),
+                            }
+                            compute_top_words.clear()
+                            run_lda.clear()
+                            st.success(f"✅ Berhasil memuat **{n_reviews} review**!")
+                            st.info("👆 Dashboard akan muncul — scroll ke atas!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Gagal memproses CSV: {e}")
+            else:
+                st.markdown("""
+                <div style="background:#fafafa;border:1.5px dashed #c7d9f8;border-radius:10px;
+                    padding:14px;text-align:center;color:#8faac8;font-size:0.8rem;margin-top:8px;">
+                    ⬆️ Pilih file CSV di atas untuk mulai
+                </div>
+                """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("**🔤 Pengaturan Analisis**")
