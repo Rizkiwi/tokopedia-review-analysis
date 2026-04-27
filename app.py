@@ -649,7 +649,7 @@ with st.sidebar:
             scrape_btn = False
             scrape_all = False
             max_pages  = 5
-            uploaded_local = st.file_uploader("Upload CSV review", type=["csv"])
+            uploaded_local = st.file_uploader("Upload CSV review", type=["csv"]) 
             if uploaded_local:
                 st.markdown(f"""
                 <div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;
