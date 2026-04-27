@@ -527,6 +527,18 @@ with st.sidebar:
             "(2) Upload file reviews_tokopedia.csv di bawah.",
             icon="ℹ️",
         )
+        # ── Download CSV Contoh ────────────────────────────
+        st.markdown("**📥 Download File Contoh**")
+
+        with open("reviews_tokopedia.csv", "rb") as f:
+            st.download_button(
+                label="📄 Download reviews_contoh.csv",
+                data=f,
+                file_name="reviews_tokopedia.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help="Download file CSV contoh untuk melihat format yang benar"
+            )
         uploaded = st.file_uploader("Upload CSV hasil scraping", type=["csv"])
         product_name = st.text_input("Nama Produk (opsional)",
                                      placeholder="misal: POCO Pad M1 8GB")
